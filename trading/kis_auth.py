@@ -110,8 +110,102 @@ token_tmp = get_token_filename()
 
 # Store and manage app key, app secret, token, account number, etc., set to your own path and filename.
 # pip install PyYAML (package installation)
-with open(os.path.join(config_root, "kis_devlp.yaml"), encoding="UTF-8") as f:
-    _cfg = yaml.safe_load(f)
+#
+# KIS_ENV=mock routes all REST traffic to KIS_MOCK_URL (default http://127.0.0.1:8000)
+# so prism-insight can run end-to-end without real KIS credentials. Used by the
+# FastAPI mock server in tests/mock_kis_server.py.
+KIS_ENV = os.environ.get("KIS_ENV", "").strip().lower()
+KIS_MOCK_URL = os.environ.get("KIS_MOCK_URL", "http://127.0.0.1:8000")
+KIS_MOCK_WS_URL = os.environ.get("KIS_MOCK_WS_URL", "ws://127.0.0.1:8000")
+
+
+def _is_mock_env() -> bool:
+    # Re-read env each call so tests can flip the flag without re-importing.
+    return os.environ.get("KIS_ENV", KIS_ENV).strip().lower() == "mock"
+
+
+def _mock_rest_url() -> str:
+    return os.environ.get("KIS_MOCK_URL", KIS_MOCK_URL)
+
+
+def _mock_ws_url() -> str:
+    return os.environ.get("KIS_MOCK_WS_URL", KIS_MOCK_WS_URL)
+
+
+def _build_mock_default_cfg() -> dict:
+    """Minimal in-memory config used when KIS_ENV=mock and kis_devlp.yaml is absent.
+
+    Lets the module import cleanly during tests without forcing the developer to
+    materialize a credentials file. Real values are not needed because every URL
+    resolves to KIS_MOCK_URL and credential validation is bypassed.
+    """
+    return {
+        "default_unit_amount": 500_000,
+        "default_unit_amount_usd": 500,
+        "auto_trading": False,
+        "default_mode": "demo",
+        "default_product_code": "01",
+        "my_app": "MOCK_REAL_KEY_PLACEHOLDER",
+        "my_sec": "MOCK_REAL_SECRET_PLACEHOLDER",
+        "paper_app": "MOCK_PAPER_KEY_PLACEHOLDER",
+        "paper_sec": "MOCK_PAPER_SECRET_PLACEHOLDER",
+        "my_htsid": "MOCK_HTS",
+        "prod": KIS_MOCK_URL,
+        "vps": KIS_MOCK_URL,
+        "ops": KIS_MOCK_WS_URL,
+        "vops": KIS_MOCK_WS_URL,
+        "my_token": "",
+        "my_agent": "MockKIS/1.0",
+        "accounts": [
+            {
+                "name": "mock-paper",
+                "mode": "demo",
+                "market": "all",
+                "account": "50000000",
+                "product": "01",
+                "primary": True,
+            },
+            {
+                "name": "mock-real",
+                "mode": "real",
+                "market": "all",
+                "account": "50000001",
+                "product": "01",
+                "primary": True,
+            },
+        ],
+    }
+
+
+_cfg_path = os.path.join(config_root, "kis_devlp.yaml")
+if os.path.exists(_cfg_path):
+    with open(_cfg_path, encoding="UTF-8") as f:
+        _cfg = yaml.safe_load(f)
+elif _is_mock_env():
+    logging.info("KIS_ENV=mock: kis_devlp.yaml not present, falling back to mock defaults")
+    _cfg = _build_mock_default_cfg()
+else:
+    raise FileNotFoundError(
+        f"KIS config not found at {_cfg_path}. Copy kis_devlp.yaml.example or set KIS_ENV=mock."
+    )
+
+
+def _resolve_svr_url(svr: str) -> str:
+    """Return the REST base URL for the given server mode.
+
+    When KIS_ENV=mock, every mode points at KIS_MOCK_URL so the mock server can
+    intercept traffic without any per-call patching.
+    """
+    if _is_mock_env():
+        return _mock_rest_url()
+    return _cfg[svr]
+
+
+def _resolve_ws_url(svr: str) -> str:
+    if _is_mock_env():
+        return _mock_ws_url()
+    key = "ops" if svr == "prod" else "vops"
+    return _cfg[key]
 
 
 DEFAULT_PRODUCT_CODE = str(_cfg.get("default_product_code", "01"))
@@ -737,6 +831,11 @@ def validate_credentials(app_key: str, mode: str) -> Tuple[bool, str]:
     Returns:
         Tuple of (is_valid, error_message)
     """
+    if _is_mock_env():
+        # Mock server accepts any credential — skip strict PS/PSVT prefix checks
+        # so developers can run the pipeline without real keys.
+        return True, ""
+
     if not app_key or len(app_key) < 10:
         return False, "App key is empty or too short"
 
@@ -1019,14 +1118,14 @@ def changeTREnv(
     cfg["my_acct"] = account["account"]
     cfg["my_prod"] = account["product"]
     cfg["my_htsid"] = _cfg["my_htsid"]
-    cfg["my_url"] = _cfg[svr]
+    cfg["my_url"] = _resolve_svr_url(svr)
 
     try:
         my_token = _TRENV.my_token if _TRENV is not None else ""
     except (AttributeError, TypeError):
         my_token = ""
     cfg["my_token"] = token_key or my_token
-    cfg["my_url_ws"] = _cfg["ops" if svr == "prod" else "vops"]
+    cfg["my_url_ws"] = _resolve_ws_url(svr)
 
     # print(cfg)
     _setTRENV(cfg)
@@ -1117,7 +1216,7 @@ def auth(
 
     if saved_token is None:
         # No valid token - request new one
-        token_url = f"{_cfg[svr]}/oauth2/tokenP"
+        token_url = f"{_resolve_svr_url(svr)}/oauth2/tokenP"
         logging.info(f"Requesting new token from KIS API ({svr} mode)...")
 
         try:
@@ -1424,7 +1523,7 @@ def auth_ws(svr="prod", product=DEFAULT_PRODUCT_CODE, account_name=None, account
     p["appkey"] = _cfg[ak1]
     p["secretkey"] = _cfg[ak2]
 
-    url = f"{_cfg[svr]}/oauth2/Approval"
+    url = f"{_resolve_svr_url(svr)}/oauth2/Approval"
     res = requests.post(url, data=json.dumps(p), headers=_getBaseHeader())  # Token issuance
     rescode = res.status_code
     if rescode == 200:  # Token issued successfully
