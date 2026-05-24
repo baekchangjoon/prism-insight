@@ -39,15 +39,18 @@ def _resolve_xlsx_path() -> str | None:
     """Find the KIS Open API spec XLSX.
 
     Resolution order:
-      1. `KIS_API_SPEC_XLSX` env var — explicit absolute path
-      2. Walk up the directory tree from this file looking for any
-         *API*.xlsx (handles both regular checkouts and git worktrees,
-         which sit several levels deeper than the repo root).
+      1. `KIS_API_SPEC_XLSX` env var — explicit absolute path override
+      2. `tests/fixtures/kis_api_spec.xlsx` — committed copy used by CI
+      3. Walk up the directory tree looking for any *API*.xlsx (handles
+         git worktrees and dev setups where the spec is kept outside
+         the repo).
     """
     explicit = os.environ.get("KIS_API_SPEC_XLSX")
     if explicit and Path(explicit).is_file():
         return explicit
-    # Walk up up to 8 levels (regular checkout = 1, worktree = ~5).
+    bundled = Path(__file__).resolve().parent / "fixtures" / "kis_api_spec.xlsx"
+    if bundled.is_file():
+        return str(bundled)
     here = Path(__file__).resolve()
     for parent in [*here.parents][:8]:
         for pattern in ("*KIS*API*.xlsx", "*API*.xlsx"):
