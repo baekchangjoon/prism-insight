@@ -1,0 +1,185 @@
+name: CI
+
+# Runs on every PR and on pushes to main. Gates the new test infrastructure
+# (approval layer + Mock KIS server + KIS Open API spec contract tests).
+#
+# Pre-existing tests in this repo are integration tests that require real KIS
+# credentials, GCP service accounts, Telegram tokens, and a non-trivial Python
+# 3.10+ environment with mcp-agent — they aren't gated here. Add additional
+# jobs as those tests become CI-friendly.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  approval-layer:
+    name: Approval layer (Phase 2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install minimal test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-asyncio pytest-cov
+
+      - name: Byte-compile approval package
+        run: python -m compileall -q approval/
+
+      - name: Run approval tests with coverage
+        id: pytest
+        run: |
+          set -o pipefail
+          pytest tests/test_approval_store.py tests/test_approval_handler.py \
+                 --cov=approval --cov-branch \
+                 --cov-report=term-missing \
+                 --cov-report=xml:coverage-approval.xml \
+                 --cov-report=html:htmlcov-approval \
+                 --junitxml=junit-approval.xml \
+                 --asyncio-mode=auto \
+                 -v 2>&1 | tee pytest-approval.log
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-approval
+          path: |
+            coverage-approval.xml
+            htmlcov-approval/
+            junit-approval.xml
+            pytest-approval.log
+          retention-days: 14
+
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo "## 🛡️ Approval layer (Phase 2)"
+            echo ""
+            echo "**Module:** \`approval/\` (Human-in-the-Loop trade approval)"
+            echo ""
+            echo "### Test results"
+            echo "\`\`\`"
+            tail -n 25 pytest-approval.log | grep -E "passed|failed|error|skipped|PASS|FAIL|ERROR" || tail -n 5 pytest-approval.log
+            echo "\`\`\`"
+            echo ""
+            echo "### Coverage"
+            echo "\`\`\`"
+            grep -E "approval/|TOTAL" pytest-approval.log | head -20 || echo "(no coverage data)"
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  mock-kis-server:
+    name: Mock KIS server + spec contracts (Phase 1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install minimal test dependencies
+        # We deliberately skip the full requirements.txt — these tests only need
+        # the FastAPI stack plus openpyxl (gated by file presence) and don't
+        # exercise pandas/playwright/mcp-agent/telegram-bot.
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov fastapi httpx uvicorn openpyxl
+
+      - name: Byte-compile mock server + tests
+        run: |
+          python -m compileall -q \
+            tests/__init__.py \
+            tests/mock_kis_server.py \
+            tests/test_mock_kis_server.py \
+            tests/test_spec_compliance.py
+
+      - name: Run mock server tests with coverage
+        id: pytest
+        run: |
+          set -o pipefail
+          pytest tests/test_mock_kis_server.py tests/test_spec_compliance.py \
+                 --cov=tests.mock_kis_server --cov-branch \
+                 --cov-report=term-missing \
+                 --cov-report=xml:coverage-mock.xml \
+                 --cov-report=html:htmlcov-mock \
+                 --junitxml=junit-mock.xml \
+                 -v 2>&1 | tee pytest-mock.log
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-mock-kis-server
+          path: |
+            coverage-mock.xml
+            htmlcov-mock/
+            junit-mock.xml
+            pytest-mock.log
+          retention-days: 14
+
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo "## 🧪 Mock KIS server + spec contracts (Phase 1)"
+            echo ""
+            echo "**Module:** \`tests/mock_kis_server.py\` (FastAPI in-memory KIS API for offline E2E testing)"
+            echo ""
+            echo "### Test results"
+            echo "\`\`\`"
+            tail -n 25 pytest-mock.log | grep -E "passed|failed|error|skipped|PASS|FAIL|ERROR" || tail -n 5 pytest-mock.log
+            echo "\`\`\`"
+            echo ""
+            echo "### Coverage"
+            echo "\`\`\`"
+            grep -E "tests/mock_kis_server|TOTAL" pytest-mock.log | head -20 || echo "(no coverage data)"
+            echo "\`\`\`"
+            echo ""
+            echo "### Spec compliance"
+            grep -E "test_endpoint_response_matches_spec.*(PASSED|FAILED|SKIPPED)" pytest-mock.log | \
+              sed -E 's/^.*\[(.+)\] (PASSED|FAILED|SKIPPED).*$/- \2: \1/' | head -20 || echo "_no spec contract results (XLSX absent — expected in CI)_"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  ci-summary:
+    name: CI summary
+    needs: [approval-layer, mock-kis-server]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Aggregate result
+        run: |
+          {
+            echo "## ✅ CI summary"
+            echo ""
+            echo "| Job | Status |"
+            echo "|-----|--------|"
+            echo "| Approval layer (Phase 2) | ${{ needs.approval-layer.result }} |"
+            echo "| Mock KIS server (Phase 1) | ${{ needs.mock-kis-server.result }} |"
+            echo ""
+            echo "_Both jobs run on Python 3.11 with minimal dependencies. Pre-existing integration tests (requiring KIS credentials, GCP, Telegram, mcp-agent) are not part of this gate._"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "${{ needs.approval-layer.result }}" != "success" || "${{ needs.mock-kis-server.result }}" != "success" ]]; then
+            echo "::error::One or more required jobs failed"
+            exit 1
+          fi
