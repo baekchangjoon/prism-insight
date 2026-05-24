@@ -1028,6 +1028,15 @@ class TelegramAIBot:
             pattern=r"^insight_fb:",
         ))
 
+        # Human-in-the-Loop trade approval callbacks
+        # (✅ approve / ❌ reject / 📝 modify). Inert when
+        # ENABLE_TRADE_APPROVAL is unset — nothing sends `apv:` callbacks.
+        from trading.approval_integration import telegram_callback_handler
+        self.application.add_handler(CallbackQueryHandler(
+            telegram_callback_handler,
+            pattern=r"^apv:",
+        ))
+
         # General text messages - /help or /start guidance
         self.application.add_handler(MessageHandler(
             filters.TEXT & ~filters.COMMAND, self.handle_default_message

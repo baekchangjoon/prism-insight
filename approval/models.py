@@ -41,6 +41,11 @@ class TradeProposal:
     auto_execute: bool = False
     proposed_at: datetime = field(default_factory=datetime.now)
     approval_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    # Caller-defined context (account_name, source pipeline, original signal
+    # dict, etc.). Executors can read this to dispatch correctly without the
+    # approval layer needing to know about KIS accounts or any other
+    # downstream concept.
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     def short_id(self) -> str:
         return self.approval_id[:12]

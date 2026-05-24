@@ -38,14 +38,18 @@ jobs:
           pip install pytest pytest-asyncio pytest-cov
 
       - name: Byte-compile approval package
-        run: python -m compileall -q approval/
+        run: python -m compileall -q approval/ trading/approval_integration.py
 
       - name: Run approval tests with coverage
+        # Includes the integration suite that exercises the wire-up
+        # between approval/, trading/approval_integration.py, and a stubbed
+        # AsyncTradingContext (no real KIS).
         id: pytest
         run: |
           set -o pipefail
           pytest tests/test_approval_store.py tests/test_approval_handler.py \
-                 --cov=approval --cov-branch \
+                 tests/test_approval_integration.py \
+                 --cov=approval --cov=trading.approval_integration --cov-branch \
                  --cov-report=term-missing \
                  --cov-report=xml:coverage-approval.xml \
                  --cov-report=html:htmlcov-approval \

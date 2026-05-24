@@ -1206,48 +1206,85 @@ class StockTrackingAgent:
                     sell_success = await self.sell_stock(stock, sell_reason)
 
                     if sell_success:
-                        # Call actual account trading function (async)
-                        from trading.domestic_stock_trading import AsyncTradingContext
-                        async with AsyncTradingContext(account_name=stock.get("account_name")) as trading:
-                            # Execute async sell with limit price for reserved orders
-                            trade_result = await trading.async_sell_stock(stock_code=ticker, limit_price=current_price)
+                        # When ENABLE_TRADE_APPROVAL=true, route through the
+                        # Human-in-the-Loop approval gate instead of calling
+                        # KIS directly. The approval executor publishes
+                        # downstream signals on its own, so we skip the
+                        # immediate publish block below in that branch.
+                        from trading import approval_integration as _appr
+                        approval_chat_id = os.environ.get("TELEGRAM_CHANNEL_ID")
+                        approval_taken = False
+                        if _appr.is_enabled() and self.telegram_bot and approval_chat_id:
+                            try:
+                                is_stop_loss = "stop" in (sell_reason or "").lower() or "손절" in (sell_reason or "")
+                                await _appr.request_sell_approval(
+                                    self.telegram_bot, int(approval_chat_id),
+                                    ticker=ticker, company_name=company_name,
+                                    current_price=current_price, sell_reason=sell_reason,
+                                    buy_price=stock.get('buy_price', 0),
+                                    is_stop_loss=is_stop_loss,
+                                    holding_qty=int(stock.get('quantity', 0) or 0),
+                                    account_name=stock.get("account_name"),
+                                )
+                                approval_taken = True
+                                trade_result = {
+                                    'success': True, 'order_no': None,
+                                    'quantity': 0, 'message': '승인 요청 전송됨',
+                                    '_pending_approval': True,
+                                }
+                            except Exception as exc:
+                                logger.warning(f"approval gate failed, falling back to direct sell: {exc}")
+                                approval_taken = False
+
+                        if not approval_taken:
+                            # Call actual account trading function (async)
+                            from trading.domestic_stock_trading import AsyncTradingContext
+                            async with AsyncTradingContext(account_name=stock.get("account_name")) as trading:
+                                # Execute async sell with limit price for reserved orders
+                                trade_result = await trading.async_sell_stock(stock_code=ticker, limit_price=current_price)
 
                         if trade_result['success']:
                             logger.info(f"Actual sell successful: {trade_result['message']}")
                         else:
                             logger.error(f"Actual sell failed: {trade_result['message']}")
 
-                        # [Optional] Publish sell signal via Redis Streams
-                        # Auto-skipped if Redis not configured (requires UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN)
-                        try:
-                            from messaging.redis_signal_publisher import publish_sell_signal
-                            await publish_sell_signal(
-                                ticker=ticker,
-                                company_name=company_name,
-                                price=current_price,
-                                buy_price=stock.get('buy_price', 0),
-                                profit_rate=((current_price - stock.get('buy_price', 0)) / stock.get('buy_price', 0) * 100),
-                                sell_reason=sell_reason,
-                                trade_result=trade_result
-                            )
-                        except Exception as signal_err:
-                            logger.warning(f"Sell signal publish failed (non-critical): {signal_err}")
+                        # When the approval gate owns the trade, signal
+                        # publishing happens inside the executor *after* the
+                        # human approves. Skip the immediate publishes here.
+                        if trade_result.get('_pending_approval'):
+                            logger.info(f"{ticker} sell sent for approval — publish deferred to executor")
+                        else:
+                            # [Optional] Publish sell signal via Redis Streams
+                            # Auto-skipped if Redis not configured (requires UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN)
+                            try:
+                                from messaging.redis_signal_publisher import publish_sell_signal
+                                await publish_sell_signal(
+                                    ticker=ticker,
+                                    company_name=company_name,
+                                    price=current_price,
+                                    buy_price=stock.get('buy_price', 0),
+                                    profit_rate=((current_price - stock.get('buy_price', 0)) / stock.get('buy_price', 0) * 100),
+                                    sell_reason=sell_reason,
+                                    trade_result=trade_result
+                                )
+                            except Exception as signal_err:
+                                logger.warning(f"Sell signal publish failed (non-critical): {signal_err}")
 
-                        # [Optional] Publish sell signal via GCP Pub/Sub
-                        # Auto-skipped if GCP not configured (requires GCP_PROJECT_ID, GCP_PUBSUB_TOPIC_ID)
-                        try:
-                            from messaging.gcp_pubsub_signal_publisher import publish_sell_signal as gcp_publish_sell_signal
-                            await gcp_publish_sell_signal(
-                                ticker=ticker,
-                                company_name=company_name,
-                                price=current_price,
-                                buy_price=stock.get('buy_price', 0),
-                                profit_rate=((current_price - stock.get('buy_price', 0)) / stock.get('buy_price', 0) * 100),
-                                sell_reason=sell_reason,
-                                trade_result=trade_result
-                            )
-                        except Exception as signal_err:
-                            logger.warning(f"GCP sell signal publish failed (non-critical): {signal_err}")
+                            # [Optional] Publish sell signal via GCP Pub/Sub
+                            # Auto-skipped if GCP not configured (requires GCP_PROJECT_ID, GCP_PUBSUB_TOPIC_ID)
+                            try:
+                                from messaging.gcp_pubsub_signal_publisher import publish_sell_signal as gcp_publish_sell_signal
+                                await gcp_publish_sell_signal(
+                                    ticker=ticker,
+                                    company_name=company_name,
+                                    price=current_price,
+                                    buy_price=stock.get('buy_price', 0),
+                                    profit_rate=((current_price - stock.get('buy_price', 0)) / stock.get('buy_price', 0) * 100),
+                                    sell_reason=sell_reason,
+                                    trade_result=trade_result
+                                )
+                            except Exception as signal_err:
+                                logger.warning(f"GCP sell signal publish failed (non-critical): {signal_err}")
 
                     if sell_success:
                         account_label = self._safe_account_log_label(
@@ -1500,10 +1537,32 @@ class StockTrackingAgent:
                         buy_success = await self.buy_stock(ticker, company_name, current_price, scenario, rank_change_msg)
 
                         if buy_success:
-                            from trading.domestic_stock_trading import AsyncTradingContext
+                            from trading import approval_integration as _appr
+                            approval_chat_id = os.environ.get("TELEGRAM_CHANNEL_ID")
+                            approval_taken = False
+                            if _appr.is_enabled() and self.telegram_bot and approval_chat_id:
+                                try:
+                                    await _appr.request_buy_approval(
+                                        self.telegram_bot, int(approval_chat_id),
+                                        ticker=ticker, company_name=company_name,
+                                        current_price=current_price, scenario=scenario,
+                                        rank_change_msg=rank_change_msg,
+                                        account_name=account["name"],
+                                    )
+                                    approval_taken = True
+                                    trade_result = {
+                                        'success': True, 'order_no': None,
+                                        'quantity': 0, 'message': '승인 요청 전송됨',
+                                        '_pending_approval': True,
+                                    }
+                                except Exception as exc:
+                                    logger.warning(f"approval gate failed, falling back to direct buy: {exc}")
+                                    approval_taken = False
 
-                            async with AsyncTradingContext(account_name=account["name"]) as trading:
-                                trade_result = await trading.async_buy_stock(stock_code=ticker, limit_price=current_price)
+                            if not approval_taken:
+                                from trading.domestic_stock_trading import AsyncTradingContext
+                                async with AsyncTradingContext(account_name=account["name"]) as trading:
+                                    trade_result = await trading.async_buy_stock(stock_code=ticker, limit_price=current_price)
 
                             if trade_result['success']:
                                 logger.info(f"Actual purchase successful: {trade_result['message']}")
@@ -1517,7 +1576,9 @@ class StockTrackingAgent:
                                     f"{ticker} partial success: {len(successful)}/{len(successful) + len(failed)} accounts"
                                 )
 
-                            if ticker not in signaled_tickers:
+                            if trade_result.get('_pending_approval'):
+                                logger.info(f"{ticker} buy sent for approval — publish deferred to executor")
+                            elif ticker not in signaled_tickers:
                                 try:
                                     from messaging.redis_signal_publisher import publish_buy_signal
 
