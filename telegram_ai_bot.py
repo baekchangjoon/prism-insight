@@ -3008,12 +3008,25 @@ class TelegramAIBot:
             )
             return ConversationHandler.END
         question = update.message.text.strip()[:500]
-        today = datetime.now().strftime("%Y년 %m월 %d일")
+        now = datetime.now()
+        today = now.strftime("%Y년 %m월 %d일")
+        today_iso = now.strftime("%Y-%m-%d")
+        year_str = now.strftime("%Y")
+        # Lower bound for "recent" tool calls — 30 days back from today.
+        # Prevents the Spark agent from defaulting to year-old date ranges
+        # when it constructs stock-price / news / search queries (issue #283).
+        recent_lower = (now - timedelta(days=30)).strftime("%Y-%m-%d")
         logger.info(f"/ask query - user={user_id}, question='{question[:50]}', remaining={remaining}")
         prompt = (
-            f"오늘은 {today}입니다. 다음 투자 관련 질문에 대해 최신 정보를 기반으로 답변해줘:\n\n"
-            f"{question}\n\n"
-            "한국어로, 텔레그램 메시지 형태로 이모지 포함하여 작성. 3000자 이내."
+            f"오늘은 {today} ({today_iso}, ISO)입니다. 지금은 {year_str}년이며, 답변과 도구 호출은 모두 이 시점을 기준으로 해주세요.\n\n"
+            f"투자 관련 질문:\n{question}\n\n"
+            "## 도구 호출 규칙 (반드시 준수)\n"
+            f"- 주가/뉴스/공시 등 시계열 데이터를 조회할 때 시작일은 {recent_lower} 이후로, 종료일은 {today_iso} 이전으로 설정하세요.\n"
+            f"- 검색 쿼리에는 명시적으로 '{year_str}년' 또는 '{year_str}'을 포함하세요.\n"
+            "- 도구가 1년 이상 지난 자료만 반환하면 다른 쿼리로 재시도하거나 '최근 자료가 부족함'을 답변에 명시하세요.\n"
+            "- 작년 또는 이전 시점의 데이터를 사용해야 할 경우 반드시 '202X년 데이터입니다'라고 명시하세요.\n\n"
+            "## 답변 형식\n"
+            "한국어, 텔레그램 메시지 형태로 이모지 포함하여 작성. 3000자 이내."
         )
         success, response_text, msg_id = await self._run_firecrawl_command(update, prompt, self._DISCLAIMER_KR)
         if success:
