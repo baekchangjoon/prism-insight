@@ -24,7 +24,7 @@
 | **하이브리드 (Gemini + Anthropic)** | Google AI Studio + Anthropic + Firecrawl | 분석 6종을 Gemini로, Investment Strategist만 Claude. 비용 절감 |
 | **올-Gemini** | Google AI Studio + Firecrawl | Anthropic 없음. Investment Strategist 품질 검증 필요 |
 
-- **Google AI Studio 키** (https://aistudio.google.com/apikey) — Gemini 2.5 Flash/Pro. Free tier 있음
+- **Google AI Studio 키** (https://aistudio.google.com/apikey) — Gemini 3.5 Flash GA(권장) 또는 Pro. Free tier 있음. v2.14.0 LLMProvider 경로로 Level 1-4 검증 완료 ([HANDOFF_GEMINI_VERIFICATION.md](HANDOFF_GEMINI_VERIFICATION.md))
 - **Firecrawl API 키** (https://firecrawl.dev) — 기업현황/뉴스 스크랩. Free tier 500 credits/월. LLM 아니므로 대체 불가.
 - **xAI Grok 키** (https://x.ai/api) — 선택. OpenAI 호환 API로 라우팅
 
@@ -107,10 +107,11 @@ mcp:
 
 ```yaml
 # 예시 A — 하이브리드 (분석은 Gemini, Investment Strategist는 Claude)
+# v2.14.0 검증 완료 모델: gemini-3.5-flash (GA)
 llm:
   default:
     provider: google
-    model: gemini-2.5-flash
+    model: gemini-3.5-flash
   roles:
     strategist:
       provider: anthropic
@@ -126,10 +127,10 @@ llm:
 llm:
   default:
     provider: google
-    model: gemini-2.5-flash
+    model: gemini-3.5-flash
   roles:
     strategist:
-      model: gemini-2.5-pro  # 통합 에이전트는 더 큰 모델
+      model: gemini-pro-latest  # 통합 에이전트는 더 큰 모델
 ```
 
 환경변수로 빠르게 override도 가능:

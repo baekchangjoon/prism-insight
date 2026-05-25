@@ -156,6 +156,25 @@ PRISM_LLM_PROVIDER=anthropic python demo.py 005930
 PRISM_LLM_MODEL_STRATEGIST=claude-opus-4-7 python demo.py 005930
 ```
 
+## 실증 검증 (2026-05-25)
+
+머지 후 Google Gemini API 키(`gemini_api_key`, `~/env.local.yml`)로 4단계 검증을 수행했습니다. 자세한 핸드오프: [HANDOFF_GEMINI_VERIFICATION.md](HANDOFF_GEMINI_VERIFICATION.md).
+
+| Level | 검증 항목 | 결과 |
+|-------|----------|------|
+| 1 | `gemini-3.5-flash` REST API 직접 호출 | ✅ 정상 응답, usage tracking 정상 |
+| 2 | `mcp_agent.workflows.llm.augmented_llm_google.GoogleAugmentedLLM` import | ✅ `google-genai` SDK 설치 후 성공 |
+| 3 | `LLMProvider` env 우선순위 + `clean()` strip + trading `prefer_responses_api=True` fallback | ✅ 모든 동작 의도대로 |
+| 4 | prism-insight Agent + `LLMProvider.get_llm_class("analysis")` → `GoogleAugmentedLLM.generate_str` (MCP 도구 없이) | ✅ Korean prompt → Korean 응답, 1.4초 |
+
+**Level 5 (실제 `demo.py 005930`)는 추가 자격증명**(`firecrawl_api_key` + KRX 로그인) **필요로 보류** — 본 릴리스는 *플러그가능성*만 보장. 실제 함수 호출 호환성과 품질 동등성은 다음 세션에서 검증 예정.
+
+확인된 가용 Gemini 모델 (이 키 기준 가장 위 5개):
+- `gemini-3.5-flash` ⭐ (1M context, 권장 default)
+- `gemini-flash-latest` (alias)
+- `gemini-pro-latest` (strategist 후보)
+- `gemini-3-pro-preview`, `gemini-3-flash-preview`
+
 ## 테스트
 
 `tests/test_llm_provider.py` 신규 — 20 cases:

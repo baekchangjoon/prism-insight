@@ -24,6 +24,10 @@ that fits — each builds on the previous.
 
 Setup-only reference: [docs/SETUP.md](docs/SETUP.md) / [docs/SETUP_ko.md](docs/SETUP_ko.md).
 
+### Active handoffs
+
+- [docs/HANDOFF_GEMINI_VERIFICATION.md](docs/HANDOFF_GEMINI_VERIFICATION.md) — Gemini provider was verified through Level 4 (plumbing OK, `gemini-3.5-flash` works via `LLMProvider`). Level 5 (full `demo.py 005930`) still needs `firecrawl_api_key` + KRX login + `pip install -r requirements.txt`.
+
 ## Project Structure
 
 ```
