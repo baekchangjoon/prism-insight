@@ -11,6 +11,19 @@ Stack: Python 3.10+, mcp-agent, GPT-5/Claude 4.6, SQLite, Telegram, KIS API
 Scale: ~75,000+ LOC, 13+ AI agents, KR/US dual market support
 ```
 
+## User-Facing Runbooks
+
+Step-by-step operational guides organized by usage depth. Pick the lowest one
+that fits — each builds on the previous.
+
+| Runbook | When to use | Risk |
+|---------|------------|------|
+| [RUNBOOK_SCENARIO_4_LOCAL_ANALYSIS.md](docs/RUNBOOK_SCENARIO_4_LOCAL_ANALYSIS.md) | Self-host the analysis pipeline (KR/US reports, no trading) | Low |
+| [RUNBOOK_SCENARIO_5_DEMO_TRADING.md](docs/RUNBOOK_SCENARIO_5_DEMO_TRADING.md) | Add KIS paper-trading (DEMO mode) — no real money | Low |
+| [RUNBOOK_SCENARIO_6_HITL_REAL.md](docs/RUNBOOK_SCENARIO_6_HITL_REAL.md) | Real trading with Human-in-the-Loop approval (v2.13.0+) | ⚠️ High |
+
+Setup-only reference: [docs/SETUP.md](docs/SETUP.md) / [docs/SETUP_ko.md](docs/SETUP_ko.md).
+
 ## Project Structure
 
 ```
