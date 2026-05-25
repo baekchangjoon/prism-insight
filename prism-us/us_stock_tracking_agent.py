@@ -1183,6 +1183,18 @@ class USStockTrackingAgent:
                     market_condition_display = market_condition_display.replace(eng, ko, 1)
                     break
 
+            # AI-bullish-but-blocked-by-guard surfacing (issue #281 mirror).
+            # `skip_reason` is set upstream to "Sector concentration (...)" when
+            # only the portfolio guard blocked; we re-derive the AI-bullish
+            # signal from scenario fields rather than parsing the reason string,
+            # so this stays correct if reason wording changes.
+            scenario_decision = (scenario.get("decision") or "").strip().lower()
+            ai_recommended_blocked_by_guard = (
+                scenario_decision == "entry"
+                and buy_score >= min_score
+                and "sector concentration" in (skip_reason or "").lower()
+            )
+
             # Generate no-entry message (same format as Korean enhanced version)
             skip_message = f"⚠️ 매수 보류: {company_name}({ticker})\n" \
                            f"현재가: ${current_price:,.2f}\n" \
@@ -1190,8 +1202,15 @@ class USStockTrackingAgent:
                            f"결정: Skip\n" \
                            f"시장 상황: {market_condition_display}\n" \
                            f"산업군: {sector}\n" \
-                           f"보류 사유: {skip_reason}\n" \
-                           f"분석 의견: {rationale if rationale else '정보 없음'}"
+                           f"보류 사유: {skip_reason}\n"
+
+            if ai_recommended_blocked_by_guard:
+                skip_message += (
+                    "\n💡 AI는 매수를 추천했지만 포트폴리오 가드로 자동 매매가 보류되었습니다.\n"
+                    f"   (사유: {skip_reason}) 필요 시 직접 검토 후 수동 매수를 고려하실 수 있습니다.\n\n"
+                )
+
+            skip_message += f"분석 의견: {rationale if rationale else '정보 없음'}"
 
             # Add trigger win rate
             trigger_win_rate = self._get_trigger_win_rate(trigger_type)
