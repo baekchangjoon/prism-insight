@@ -62,6 +62,7 @@ from tracking import (
     get_current_stock_price,
     get_trading_value_rank_change,
     is_ticker_in_holdings,
+    was_sold_today,
     get_current_slots_count,
     check_sector_diversity,
     parse_price_value,
@@ -231,6 +232,15 @@ class StockTrackingAgent:
         """Check if stock is already in holdings (delegates to tracking.helpers)"""
         account_key, _ = self._account_scope()
         return is_ticker_in_holdings(self.cursor, ticker, account_key=account_key)
+
+    async def _was_sold_today(self, ticker: str) -> bool:
+        """Check if this ticker was sold today on the active account (issue #282).
+
+        Blocks tax-inefficient round-trips when a sell (manual or stop-loss)
+        is followed by a same-day AI buy signal on the same name.
+        """
+        account_key, _ = self._account_scope()
+        return was_sold_today(self.cursor, ticker, account_key=account_key)
 
     async def _get_current_slots_count(self) -> int:
         """Get current number of holdings (delegates to tracking.helpers)"""
@@ -687,6 +697,16 @@ class StockTrackingAgent:
             # Check if already holding
             if await self._is_ticker_in_holdings(ticker):
                 logger.warning(f"{ticker}({company_name}) already in holdings")
+                return False
+
+            # Block same-day re-buy after sell (issue #282).
+            # A sell row in trading_history dated today means we already
+            # exited this position; immediately re-entering wastes commission
+            # and risks chasing a name we just decided to leave.
+            if await self._was_sold_today(ticker):
+                logger.warning(
+                    f"{ticker}({company_name}) was sold today - skipping same-day re-buy"
+                )
                 return False
 
             # Check available slots

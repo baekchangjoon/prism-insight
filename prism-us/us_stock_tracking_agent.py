@@ -131,6 +131,7 @@ try:
         migrate_us_performance_tracker_columns,
         migrate_us_watchlist_history_columns,
         is_us_ticker_in_holdings,
+        was_us_ticker_sold_today,
         get_us_holdings_count,
     )
     from tracking.journal import USJournalManager
@@ -150,6 +151,7 @@ except ImportError as e:
         migrate_us_performance_tracker_columns,
         migrate_us_watchlist_history_columns,
         is_us_ticker_in_holdings,
+        was_us_ticker_sold_today,
         get_us_holdings_count,
     )
     from tracking.journal import USJournalManager
@@ -617,6 +619,11 @@ class USStockTrackingAgent:
         account_key, _ = self._account_scope()
         return is_us_ticker_in_holdings(self.cursor, ticker, account_key=account_key)
 
+    async def _was_sold_today(self, ticker: str) -> bool:
+        """Block same-day re-buy on the active account (issue #282)."""
+        account_key, _ = self._account_scope()
+        return was_us_ticker_sold_today(self.cursor, ticker, account_key=account_key)
+
     async def _get_current_slots_count(self) -> int:
         """Get current number of holdings."""
         account_key, _ = self._account_scope()
@@ -876,6 +883,13 @@ class USStockTrackingAgent:
             # Check if already holding
             if await self._is_ticker_in_holdings(ticker):
                 logger.warning(f"{ticker} ({company_name}) already in holdings")
+                return False
+
+            # Block same-day re-buy after sell (issue #282).
+            if await self._was_sold_today(ticker):
+                logger.warning(
+                    f"{ticker} ({company_name}) was sold today - skipping same-day re-buy"
+                )
                 return False
 
             # Check available slots

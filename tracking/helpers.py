@@ -205,6 +205,35 @@ def is_ticker_in_holdings(cursor, ticker: str, account_key: str | None = None) -
         return False
 
 
+def was_sold_today(cursor, ticker: str, account_key: str | None = None) -> bool:
+    """Return True if `ticker` has a sell row in trading_history dated today.
+
+    Prevents tax-inefficient round-trips when an AI signal fires shortly after
+    a stop-loss or sell-decision liquidation of the same name (issue #282).
+    Uses local-time `YYYY-MM-DD` from the sell_date string, since trading_history
+    stores naive datetimes in `%Y-%m-%d %H:%M:%S` form.
+    """
+    try:
+        from datetime import datetime as _dt
+        today_str = _dt.now().strftime("%Y-%m-%d")
+        if account_key:
+            cursor.execute(
+                "SELECT COUNT(*) FROM trading_history "
+                "WHERE ticker = ? AND account_key = ? AND substr(sell_date, 1, 10) = ?",
+                (ticker, account_key, today_str)
+            )
+        else:
+            cursor.execute(
+                "SELECT COUNT(*) FROM trading_history "
+                "WHERE ticker = ? AND substr(sell_date, 1, 10) = ?",
+                (ticker, today_str)
+            )
+        return cursor.fetchone()[0] > 0
+    except Exception as e:
+        logger.error(f"Error checking same-day sell history: {str(e)}")
+        return False
+
+
 def get_current_slots_count(cursor, account_key: str | None = None) -> int:
     """Get current number of holdings."""
     try:

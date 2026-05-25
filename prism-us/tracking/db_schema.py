@@ -883,6 +883,34 @@ def is_us_ticker_in_holdings(cursor, ticker: str, account_key: Optional[str] = N
     return cursor.fetchone()[0] > 0
 
 
+def was_us_ticker_sold_today(cursor, ticker: str, account_key: Optional[str] = None) -> bool:
+    """Return True if `ticker` has a sell row in us_trading_history dated today.
+
+    Mirrors `tracking.helpers.was_sold_today` for the US market — prevents
+    tax-inefficient round-trips on a same-day sell→buy round trip (issue #282).
+    `sell_date` is stored as `%Y-%m-%d %H:%M:%S` so the leading 10 chars give
+    the date.
+    """
+    try:
+        from datetime import datetime as _dt
+        today_str = _dt.now().strftime("%Y-%m-%d")
+        if account_key:
+            cursor.execute(
+                "SELECT COUNT(*) FROM us_trading_history "
+                "WHERE ticker = ? AND account_key = ? AND substr(sell_date, 1, 10) = ?",
+                (ticker, account_key, today_str)
+            )
+        else:
+            cursor.execute(
+                "SELECT COUNT(*) FROM us_trading_history "
+                "WHERE ticker = ? AND substr(sell_date, 1, 10) = ?",
+                (ticker, today_str)
+            )
+        return cursor.fetchone()[0] > 0
+    except Exception:
+        return False
+
+
 if __name__ == "__main__":
     # Test database initialization
     import logging
