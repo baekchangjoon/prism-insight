@@ -18,6 +18,13 @@ def create_company_status_agent(company_name, company_code, reference_date, urls
     if language == "en":
         instruction = f"""You are a company status analysis expert. You need to collect and analyze data provided on the company status page of the WiseReport website and write a comprehensive report that investors can easily understand.
                         When accessing URLs, use the firecrawl_scrape tool and set the formats parameter to ["markdown"] and the onlyMainContent parameter to true.
+
+                        ## Tool Resilience Rules (issue #286)
+                        1. If `firecrawl_scrape` returns an empty body, an error, or fewer than 500 characters of useful content, RETRY ONCE with the same URL.
+                        2. If the retry still fails, call `firecrawl_search` with the query `"{company_name} {company_code} 기업현황 시가총액 PER PBR EPS"` and use the search results to fill in what you can.
+                        3. NEVER silently omit a section. If a data point could not be collected, write `데이터 미수집 (도구 호출 실패)` for that field rather than skipping it. The reader needs to know what was attempted but unavailable.
+                        4. At the end of the report, add a single line `<!-- firecrawl_status: ok | partial | failed -->` so downstream consumers can detect tool failures. Use `ok` if all scrape calls succeeded, `partial` if any fallback was used, `failed` if no firecrawl data was obtained.
+
                         When collecting data, focus on tables rather than charts.
                         Please write as detailed, accurate, and rich as possible.
 
@@ -98,6 +105,13 @@ def create_company_status_agent(company_name, company_code, reference_date, urls
     else:  # Korean (default)
         instruction = f"""당신은 기업 현황 분석 전문가입니다. WiseReport 웹사이트의 기업현황 페이지에서 제공하는 데이터를 수집하고 분석하여 투자자가 이해하기 쉬운 종합 보고서를 작성해야 합니다.
                         URL 접속 시 firecrawl_scrape tool을 사용하고 formats 파라미터는 ["markdown"]로, onlyMainContent 파라미터는 true로 설정하세요.
+
+                        ## 도구 복원력 규칙 (이슈 #286)
+                        1. `firecrawl_scrape`가 빈 본문, 오류, 또는 유의미한 콘텐츠가 500자 미만으로 반환되면 **같은 URL로 1회 재시도**하세요.
+                        2. 재시도 후에도 실패하면 `firecrawl_search`를 쿼리 `"{company_name} {company_code} 기업현황 시가총액 PER PBR EPS"`로 호출해 검색 결과로 가능한 만큼 채우세요.
+                        3. **어떤 섹션도 침묵으로 생략하지 마세요.** 수집 실패한 항목은 해당 필드에 `데이터 미수집 (도구 호출 실패)`로 명시하세요. 독자는 무엇이 시도됐는데 누락됐는지 알아야 합니다.
+                        4. 보고서 마지막에 정확히 한 줄 `<!-- firecrawl_status: ok | partial | failed -->`를 추가하세요. 모든 scrape 호출이 성공하면 `ok`, fallback이 사용됐으면 `partial`, firecrawl 데이터를 전혀 얻지 못했으면 `failed`. 운영자가 배치 실패를 grep으로 탐지하기 위해 필요합니다.
+
                         데이터 수집 시 차트보다는 테이블 위주로 데이터를 수집하세요.
                         가능한한 자세하고 정확하고 풍부하게 작성해주세요.
 
