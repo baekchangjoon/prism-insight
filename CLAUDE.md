@@ -1,6 +1,6 @@
 # CLAUDE.md - AI Assistant Guide for PRISM-INSIGHT
 
-> **Version**: 2.13.1 | **Updated**: 2026-05-25
+> **Version**: 2.14.0 | **Updated**: 2026-05-25
 
 ## Quick Overview
 
@@ -280,6 +280,7 @@ test: Tests
 
 | Ver | Date | Changes |
 |-----|------|---------|
+| 2.14.0 | 2026-05-25 | **Multi-LLM-provider 설정** - `cores/llm/provider.py` 신규 (role별 provider/model resolver), OpenAI/Anthropic/Google Gemini/xAI Grok 지원, `mcp_agent.config.yaml`의 `llm:` 섹션으로 6개 role (analysis/summary/strategist/insight/trading/translator) 별 provider 지정, `PRISM_LLM_PROVIDER_<ROLE>` env override, `clean_request_params`로 `reasoning_effort` 같은 provider 미지원 파라미터 자동 strip, `OpenAIResponsesLLM` 자동 fallback (trading role), 6개 호출 사이트 리팩토링 (report_generation.py × 4 + translator + company_name + insight_agent + tracking agent × 3). pre-v2.14 default 보존으로 회귀 0. 20 신규 테스트 |
 | 2.13.1 | 2026-05-25 | **오픈 이슈 5건 트리아지** - `/retry_<승인ID> <금액>` MessageHandler 구현 (HitL approve 보완), 당일 매도 후 재매수 차단 (#282, `was_sold_today` KR+US), `/ask` 도구 호출 날짜 가드 (#283), 보고서 `2.1 기업현황` firecrawl 누락 관찰 가능화 (#286, 4-rule 복원력 + `<!-- firecrawl_status: -->` 마커 + `read_timeout_seconds: 120`), AI bullish + 포트폴리오 가드 차단 시 명시적 콜아웃 (#281, KR+US), 매매일지 피드백루프 1단계 투명화 (#280 부분, `get_provenance_for_ticker` + 매수 메시지 `📚 매매일지 참조` 1-line). 54 신규 테스트 |
 | 2.13.0 | 2026-05-25 | **Human-in-the-Loop 매매 승인 + Mock KIS 테스트 스택** - Phase 2: `approval/` 패키지 + Telegram 승인 카드 (✅/❌/📝), 30분 timeout, `account_name` 기반 다계좌 자동 라우팅, `trade_approvals` SQLite 감사 추적, Phase 1: `tests/mock_kis_server.py` FastAPI 인메모리 KIS + `KIS_ENV=mock` 라우팅, KIS Open API 스펙 워크북 contract test (339 시트), GitHub Actions CI 워크플로우 (approval-layer + mock-kis-server + ci-summary). 기본값 OFF (`ENABLE_TRADE_APPROVAL=false`) |
 | 2.12.0 | 2026-04-30 | **시장 국면별 유연 대응 (Regime-Aware Trading)** - parabolic regime 신설 (시장지수 90일 +30% AND 30일 +10% 충족 시), 모멘텀 트리거에만 적용, target_price stale 컨센서스 fallback (보고서 목표가 < 현재가×1.05 시 차트 저항선 80%로 fallback), Distribution Day Kill Switch (4주 내 분포일 4건 → regime 1단계 자동 보수화), parabolic 시 max_portfolio_size 1~2 슬롯 축소, regime 라벨 한국어 번역 통일 |
