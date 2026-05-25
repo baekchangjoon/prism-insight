@@ -44,7 +44,8 @@ logger = logging.getLogger(__name__)
 # MCP related imports
 from mcp_agent.app import MCPApp
 from mcp_agent.workflows.llm.augmented_llm import RequestParams
-from cores.llm.openai_responses_llm import OpenAIResponsesLLM as OpenAIAugmentedLLM
+from cores.llm.openai_responses_llm import OpenAIResponsesLLM as OpenAIAugmentedLLM  # noqa: F401 — legacy alias, preferred path is cores.llm.provider.LLMProvider
+from cores.llm.provider import LLMProvider, clean
 
 # Core agent imports
 from cores.openai_error_logging import log_openai_error
@@ -352,8 +353,12 @@ class StockTrackingAgent:
                 - ⚠️ This adjustment is a reference based on past experience.
                 """
 
-            # LLM call to generate trading scenario
-            llm = await self.trading_agent.attach_llm(OpenAIAugmentedLLM)
+            # LLM call to generate trading scenario.
+            # `prefer_responses_api=True` keeps OpenAI Responses API behavior
+            # for the trading role; non-openai providers automatically fall
+            # back to standard chat (no Responses equivalent).
+            llm_cls = LLMProvider.get_llm_class("trading", prefer_responses_api=True)
+            llm = await self.trading_agent.attach_llm(llm_cls)
 
             # Build trigger info section if available
             trigger_info_section = ""
@@ -405,10 +410,10 @@ class StockTrackingAgent:
 
             response = await llm.generate_str(
                 message=prompt_message,
-                request_params=RequestParams(
-                    model="gpt-5.5",
+                request_params=clean(RequestParams(
+                    model=LLMProvider.get_model("trading"),
                     maxTokens=30000
-                )
+                ), role="trading")
             )
 
             # JSON parsing (consolidated in cores/utils.py)

@@ -83,9 +83,9 @@ async def translate_company_name(korean_name: str) -> str:
         return _translation_cache[korean_name]
 
     try:
-        from mcp_agent.workflows.llm.augmented_llm_openai import OpenAIAugmentedLLM
         from mcp_agent.workflows.llm.augmented_llm import RequestParams
         from mcp_agent.agents.agent import Agent
+        from cores.llm.provider import LLMProvider, clean
 
         # Create a simple translation agent
         instruction = """You are a Korean-to-English translator for company names.
@@ -121,18 +121,19 @@ Return ONLY the English company name, nothing else. No quotes, no explanation.
             server_names=[]
         )
 
-        # Attach LLM
-        llm = await agent.attach_llm(OpenAIAugmentedLLM)
+        # Attach LLM (translator role — falls back to default if unconfigured)
+        llm_cls = LLMProvider.get_llm_class("translator")
+        llm = await agent.attach_llm(llm_cls)
 
         # Generate translation
         english_name = await llm.generate_str(
             message=f"Translate this Korean company name to English: {korean_name}",
-            request_params=RequestParams(
-                model="gpt-5.4-mini",
+            request_params=clean(RequestParams(
+                model=LLMProvider.get_model("translator"),
                 maxTokens=1000,
                 temperature=0.1,
                 max_iterations=1
-            )
+            ), role="translator")
         )
 
         # Clean and sanitize the result

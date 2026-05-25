@@ -12,7 +12,8 @@ import traceback
 import re
 
 from mcp_agent.workflows.llm.augmented_llm import RequestParams
-from cores.llm.openai_responses_llm import OpenAIResponsesLLM as OpenAIAugmentedLLM
+from cores.llm.openai_responses_llm import OpenAIResponsesLLM as OpenAIAugmentedLLM  # noqa: F401 — legacy alias
+from cores.llm.provider import LLMProvider, clean
 
 # Import core agents
 from cores.agents.trading_agents import create_sell_decision_agent
@@ -932,8 +933,11 @@ class EnhancedStockTrackingAgent(StockTrackingAgent):
             # Dynamic trailing stop threshold: min 1.5%, max 5%, scales with price appreciation
             trailing_stop_threshold_pct = max(1.5, min(5.0, (highest_price - buy_price) / buy_price * 100 * 0.3)) if buy_price > 0 else 3.0
 
-            # LLM call to generate sell decision
-            llm = await self.sell_decision_agent.attach_llm(OpenAIAugmentedLLM)
+            # LLM call to generate sell decision (trading role — preserves
+            # Responses API behavior when provider=openai, falls back to
+            # standard chat for other providers).
+            llm_cls = LLMProvider.get_llm_class("trading", prefer_responses_api=True)
+            llm = await self.sell_decision_agent.attach_llm(llm_cls)
 
             # Prepare prompt based on language (Korean text preserved for language == "ko" blocks)
             if self.language == "ko":
@@ -998,10 +1002,10 @@ class EnhancedStockTrackingAgent(StockTrackingAgent):
 
             response = await llm.generate_str(
                 message=prompt_message,
-                request_params=RequestParams(
-                    model="gpt-5.5",
+                request_params=clean(RequestParams(
+                    model=LLMProvider.get_model("trading"),
                     maxTokens=30000
-                )
+                ), role="trading")
             )
 
             # JSON parsing (consolidated in cores/utils.py)

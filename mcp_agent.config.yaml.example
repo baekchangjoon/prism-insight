@@ -101,3 +101,88 @@ openai:
   # Secrets (API keys, etc.) are stored in an mcp_agent.secrets.yaml file which can be gitignored
   default_model: gpt-5.1
   reasoning_effort: high
+
+# ==========================================================================
+# Multi-LLM-provider configuration (v2.14.0+)
+# ==========================================================================
+# Selects which provider + model each agent role uses. Everything is optional:
+# if the `llm:` block is missing entirely, prism-insight falls back to the
+# pre-v2.14 hardcoded model choices (openai/gpt-5.4-mini for analysis,
+# anthropic/claude-sonnet-4-6 for strategist, openai/gpt-5.5 for trading,
+# etc.), so this section only needs to be filled in if you actually want to
+# change something.
+#
+# Resolution precedence (highest first):
+#   1. PRISM_LLM_PROVIDER_<ROLE> / PRISM_LLM_MODEL_<ROLE> env vars
+#   2. PRISM_LLM_PROVIDER / PRISM_LLM_MODEL env vars (global)
+#   3. llm.roles.<role>.{provider,model} here
+#   4. llm.default.{provider,model} here
+#   5. Built-in role default
+#
+# Supported providers: openai | anthropic | google | grok
+# Put each provider's API key in mcp_agent.secrets.yaml (see the example
+# secrets file for keys: openai.api_key / anthropic.api_key / google.api_key
+# / grok.api_key).
+#
+# Example A — keep everything default (just delete or comment out the whole
+# llm: block, or leave it empty: `llm: {}`).
+#
+# Example B — replace OpenAI with Gemini for analysis/translator/summary,
+# keep Anthropic for the strategist and Insight Q&A:
+#
+#   llm:
+#     default:
+#       provider: google
+#       model: gemini-2.5-flash
+#     roles:
+#       strategist:
+#         provider: anthropic
+#         model: claude-sonnet-4-6
+#       insight:
+#         provider: anthropic
+#         model: claude-sonnet-4-6
+#       trading:
+#         provider: openai          # keep OpenAI Responses API for trading
+#         model: gpt-5.5
+#
+# Example C — run everything on a single Gemini key (lowest cost):
+#
+#   llm:
+#     default:
+#       provider: google
+#       model: gemini-2.5-flash
+#     roles:
+#       strategist:
+#         model: gemini-2.5-pro      # bigger model for the integrator
+#
+# Roles in use:
+#   analysis   — the 6 KR/US analysis agents (price, flow, financial,
+#                industry, news, market)
+#   summary    — executive summary agent
+#   strategist — Investment Strategist (cross-section integrator)
+#   insight    — /insight archive Q&A agent
+#   trading    — Buy/Sell Specialist (OpenAI Responses API used only when
+#                provider == openai; other providers fall back to standard
+#                chat-style completion automatically)
+#   translator — Telegram broadcast translator + company-name translator
+
+# llm:
+#   default:
+#     provider: openai
+#     model: gpt-5.4-mini
+#   roles:
+#     analysis:
+#       provider: openai
+#       model: gpt-5.4-mini
+#     strategist:
+#       provider: anthropic
+#       model: claude-sonnet-4-6
+#     insight:
+#       provider: anthropic
+#       model: claude-sonnet-4-6
+#     trading:
+#       provider: openai
+#       model: gpt-5.5
+#     translator:
+#       provider: openai
+#       model: gpt-5-nano

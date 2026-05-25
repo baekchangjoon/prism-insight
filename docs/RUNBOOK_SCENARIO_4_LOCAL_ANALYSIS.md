@@ -13,11 +13,20 @@
 - ~5GB 디스크 (chromium + reports + DB)
 - macOS / Linux / WSL2 (Windows native 미검증)
 
-### 필수 API 키 (최소 1개)
-- **OpenAI API 키** (기본) — gpt-5/gpt-5.4-mini 사용. 종목 1건 보고서 약 $0.20-0.50
-- **또는 ChatGPT Plus/Pro 구독** (v2.7.0+) — `PRISM_OPENAI_AUTH_MODE=chatgpt_oauth`로 API 비용 0원
-- **Anthropic API 키** — Claude Sonnet 4.6 (Investment Strategist에서 사용)
-- **Firecrawl API 키** (https://firecrawl.dev) — 기업현황/뉴스 스크랩. Free tier 500 credits/월부터
+### 필수 API 키 (조합 가능 — v2.14.0+)
+
+분석 에이전트별로 provider를 선택할 수 있습니다 ([v2.14.0 릴리스 노트](RELEASE_NOTES_v2.14.0.md) 참조). 가장 흔한 3가지 조합:
+
+| 조합 | 필요한 키 | 비고 |
+|------|----------|------|
+| **올-OpenAI (기본)** | OpenAI + Firecrawl + (선택) Anthropic | 디폴트. Anthropic 없으면 Investment Strategist도 OpenAI fallback |
+| **올-OpenAI w/ ChatGPT OAuth** (v2.7.0+) | ChatGPT Plus/Pro 구독 + Firecrawl + Anthropic | OpenAI API 비용 0원. `PRISM_OPENAI_AUTH_MODE=chatgpt_oauth` |
+| **하이브리드 (Gemini + Anthropic)** | Google AI Studio + Anthropic + Firecrawl | 분석 6종을 Gemini로, Investment Strategist만 Claude. 비용 절감 |
+| **올-Gemini** | Google AI Studio + Firecrawl | Anthropic 없음. Investment Strategist 품질 검증 필요 |
+
+- **Google AI Studio 키** (https://aistudio.google.com/apikey) — Gemini 2.5 Flash/Pro. Free tier 있음
+- **Firecrawl API 키** (https://firecrawl.dev) — 기업현황/뉴스 스크랩. Free tier 500 credits/월. LLM 아니므로 대체 불가.
+- **xAI Grok 키** (https://x.ai/api) — 선택. OpenAI 호환 API로 라우팅
 
 ### 선택
 - **KRX 직접 로그인** ID/PW 또는 카카오 SNS 로그인 — `kospi_kosdaq` MCP 서버 인증용 (없으면 일부 시세 데이터 누락)
@@ -62,12 +71,17 @@ cp mcp_agent.config.yaml.example mcp_agent.config.yaml
 cp mcp_agent.secrets.yaml.example mcp_agent.secrets.yaml
 ```
 
-**`mcp_agent.secrets.yaml`** 편집 — API 키 채우기:
+**`mcp_agent.secrets.yaml`** 편집 — API 키 채우기 (사용할 provider만):
 ```yaml
 openai:
   api_key: "sk-..."          # OpenAI API
 anthropic:
   api_key: "sk-ant-..."      # Anthropic
+google:
+  api_key: "AIza..."         # (v2.14.0+) Gemini 사용 시
+# grok:
+#   api_key: "xai-..."       # (v2.14.0+) Grok 사용 시
+#   base_url: "https://api.x.ai/v1"
 # firecrawl key는 mcp_agent.config.yaml의 servers.firecrawl.env에 입력
 ```
 
@@ -86,6 +100,48 @@ mcp:
 ```
 
 > `read_timeout_seconds: 120`이 firecrawl·webresearch에 설정되어 있는지 확인 (v2.13.1 권장값).
+
+### 4.2 LLM provider 선택 (v2.14.0+, 선택)
+
+기본은 pre-v2.14 하드코딩 (OpenAI 분석 + Anthropic 전략). 다른 provider로 바꾸려면 `mcp_agent.config.yaml` 끝에 `llm:` 섹션 추가:
+
+```yaml
+# 예시 A — 하이브리드 (분석은 Gemini, Investment Strategist는 Claude)
+llm:
+  default:
+    provider: google
+    model: gemini-2.5-flash
+  roles:
+    strategist:
+      provider: anthropic
+      model: claude-sonnet-4-6
+    insight:
+      provider: anthropic
+      model: claude-sonnet-4-6
+    trading:
+      provider: openai       # OpenAI Responses API 유지
+      model: gpt-5.5
+
+# 예시 B — 올-Gemini (Anthropic 키 없을 때)
+llm:
+  default:
+    provider: google
+    model: gemini-2.5-flash
+  roles:
+    strategist:
+      model: gemini-2.5-pro  # 통합 에이전트는 더 큰 모델
+```
+
+환경변수로 빠르게 override도 가능:
+```bash
+# 모든 role을 Gemini로 강제
+PRISM_LLM_PROVIDER=google python demo.py 005930
+
+# strategist만 특정 모델
+PRISM_LLM_PROVIDER_STRATEGIST=anthropic PRISM_LLM_MODEL_STRATEGIST=claude-opus-4-7 python demo.py 005930
+```
+
+지원 provider: `openai` · `anthropic` · `google` · `grok`. 각 role의 built-in default와 설정 우선순위는 [v2.14.0 릴리스 노트](RELEASE_NOTES_v2.14.0.md) 참조.
 
 ### 4.2 환경변수 (선택)
 
