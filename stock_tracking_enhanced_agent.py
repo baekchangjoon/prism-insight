@@ -468,6 +468,20 @@ class EnhancedStockTrackingAgent(StockTrackingAgent):
                             market_condition_text = market_condition_text.replace(eng, ko, 1)
                             break
 
+                    # AI-bullish-but-blocked-by-guard surfacing (issue #281).
+                    # When the AI itself said Enter with sufficient score, but
+                    # a portfolio-side constraint (sector/slots) skipped the
+                    # trade, the user should see that *the AI recommended a
+                    # buy* — not just '⚠️ 매수 보류'. They may want to override
+                    # manually. We compute this independently of the reason
+                    # string so the highlighting survives even if the reason
+                    # list grows.
+                    ai_recommended_blocked_by_guard = (
+                        decision == "Enter"
+                        and buy_score >= min_score
+                        and not sector_diverse
+                    )
+
                     # Generate skip message
                     skip_message = f"⚠️ 매수 보류: {company_name}({ticker})\n" \
                                    f"현재가: {current_price:,.0f}원\n" \
@@ -475,8 +489,18 @@ class EnhancedStockTrackingAgent(StockTrackingAgent):
                                    f"결정: {decision}\n" \
                                    f"시장 상황: {market_condition_text}\n" \
                                    f"산업군: {scenario.get('sector', '알 수 없음')}\n" \
-                                   f"보류 사유: {reason}\n" \
-                                   f"분석 의견: {scenario.get('rationale', '정보 없음')}"
+                                   f"보류 사유: {reason}\n"
+
+                    if ai_recommended_blocked_by_guard:
+                        # Explicit call-out so the user doesn't dismiss the
+                        # message as 'AI said no'. The AI said *yes* — only
+                        # the portfolio guard blocked auto-execution.
+                        skip_message += (
+                            "\n💡 AI는 매수를 추천했지만 포트폴리오 가드로 자동 매매가 보류되었습니다.\n"
+                            f"   (사유: {reason}) 필요 시 직접 검토 후 수동 매수를 고려하실 수 있습니다.\n\n"
+                        )
+
+                    skip_message += f"분석 의견: {scenario.get('rationale', '정보 없음')}"
 
                     # Add trigger win rate
                     trigger_info = getattr(self, 'trigger_info_map', {}).get(ticker, {})

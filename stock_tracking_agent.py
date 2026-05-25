@@ -788,7 +788,30 @@ class StockTrackingAgent:
                 message += f"거래대금 분석: {rank_change_msg}\n"
 
             message += f"투자근거: {scenario.get('rationale', '정보 없음')}\n"
-            
+
+            # Journal feedback-loop transparency (issue #280). Surface which
+            # accumulated principles / same-stock journal entries / intuitions
+            # influenced *this specific buy* so the user can see the feedback
+            # loop instead of treating it as a black box. Also logged with the
+            # exact IDs so future audit can correlate a buy with the principles
+            # in effect at the time.
+            try:
+                provenance = self.journal_manager.get_provenance_for_ticker(
+                    ticker, sector=scenario.get('sector'),
+                    trigger_type=trigger_type,
+                )
+                provenance_line = self.journal_manager.format_provenance_one_liner(provenance)
+                if provenance_line:
+                    message += f"{provenance_line}\n"
+                    logger.info(
+                        f"Journal provenance for buy {ticker}: "
+                        f"principles={provenance['principle_ids']} "
+                        f"same_stock_journals={provenance['same_stock_journal_ids']} "
+                        f"intuitions={provenance['intuition_ids']}"
+                    )
+            except Exception as e:
+                logger.debug(f"Journal provenance unavailable for {ticker}: {e}")
+
             # Format trading scenario
             trading_scenarios = scenario.get('trading_scenarios', {})
             if trading_scenarios and isinstance(trading_scenarios, dict):

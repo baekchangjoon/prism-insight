@@ -23,6 +23,11 @@ mcp:
         args: [ "-y", "firecrawl-mcp" ]
         env:
           FIRECRAWL_API_KEY: "example key"
+        # Batch runs spawn the firecrawl MCP server many times back-to-back
+        # (one MCPApp lifecycle per stock × per section); under load
+        # firecrawl_scrape can take >60s to return. Match webresearch's
+        # tolerance so we don't lose the 2.1 기업현황 section silently.
+        read_timeout_seconds: 120
 
     kospi_kosdaq:
       command: "python3"
