@@ -451,6 +451,98 @@ Please review the following completed trade:
         parts.append("")
         return parts
 
+    def get_provenance_for_ticker(
+        self, ticker: str, sector: str = None, trigger_type: str = None
+    ) -> Dict[str, Any]:
+        """Return counts + IDs of journal artifacts that *would* feed into the
+        buy decision for this ticker (issue #280 — feedback-loop transparency).
+
+        Companion to `get_context_for_ticker` which returns the prompt text.
+        This returns structured metadata so callers (the tracking agent's
+        `buy_stock`) can log which principles / journal entries / intuitions
+        were referenced and surface a one-line summary in the Telegram buy
+        message:
+
+            📚 참조: 누적 원칙 5개 · 같은 종목 일지 2개 · 직관 7개
+
+        Returns a dict with stable keys even when journal is disabled, so
+        callers don't need to handle missing fields:
+
+            {
+              "enabled": bool,
+              "principle_count": int,
+              "principle_ids": List[int],
+              "same_stock_journal_count": int,
+              "same_stock_journal_ids": List[int],
+              "intuition_count": int,
+              "intuition_ids": List[int],
+            }
+        """
+        empty = {
+            "enabled": False,
+            "principle_count": 0, "principle_ids": [],
+            "same_stock_journal_count": 0, "same_stock_journal_ids": [],
+            "intuition_count": 0, "intuition_ids": [],
+        }
+        if not self.enable_journal:
+            return empty
+        try:
+            # Universal principles (mirrors get_universal_principles' filter)
+            self.cursor.execute("""
+                SELECT id FROM trading_principles
+                WHERE is_active = 1 AND scope = 'universal'
+                  AND supporting_trades >= 2
+                ORDER BY priority DESC, confidence DESC LIMIT 5
+            """)
+            principle_ids = [row[0] for row in self.cursor.fetchall()]
+
+            # Same-stock journal entries (mirrors get_context_for_ticker)
+            self.cursor.execute("""
+                SELECT id FROM trading_journal WHERE ticker = ?
+                ORDER BY trade_date DESC LIMIT 3
+            """, (ticker,))
+            journal_ids = [row[0] for row in self.cursor.fetchall()]
+
+            # Active intuitions
+            self.cursor.execute("""
+                SELECT id FROM trading_intuitions WHERE is_active = 1
+                ORDER BY confidence DESC LIMIT 10
+            """)
+            intuition_ids = [row[0] for row in self.cursor.fetchall()]
+
+            return {
+                "enabled": True,
+                "principle_count": len(principle_ids),
+                "principle_ids": principle_ids,
+                "same_stock_journal_count": len(journal_ids),
+                "same_stock_journal_ids": journal_ids,
+                "intuition_count": len(intuition_ids),
+                "intuition_ids": intuition_ids,
+            }
+        except Exception as e:
+            logger.warning(f"Failed to compute journal provenance for {ticker}: {e}")
+            return empty
+
+    @staticmethod
+    def format_provenance_one_liner(provenance: Dict[str, Any]) -> str:
+        """One-line Telegram-friendly summary of journal provenance.
+
+        Empty string if journal is disabled or no artifacts were available, so
+        callers can append unconditionally (`message += format_provenance(...)`).
+        """
+        if not provenance.get("enabled"):
+            return ""
+        p = provenance.get("principle_count", 0)
+        j = provenance.get("same_stock_journal_count", 0)
+        i = provenance.get("intuition_count", 0)
+        if p == 0 and j == 0 and i == 0:
+            return ""
+        parts = []
+        if p: parts.append(f"누적 원칙 {p}개")
+        if j: parts.append(f"같은 종목 일지 {j}개")
+        if i: parts.append(f"직관 {i}개")
+        return "📚 매매일지 참조: " + " · ".join(parts)
+
     def get_context_for_ticker(self, ticker: str, sector: str = None, trigger_type: str = None) -> str:
         """Retrieve relevant trading journal context for buy decisions."""
         if not self.enable_journal:
