@@ -1,6 +1,6 @@
 # CLAUDE.md - AI Assistant Guide for PRISM-INSIGHT
 
-> **Version**: 2.9.0 | **Updated**: 2026-03-31
+> **Version**: 2.13.1 | **Updated**: 2026-05-25
 
 ## Quick Overview
 
@@ -267,6 +267,11 @@ test: Tests
 
 | Ver | Date | Changes |
 |-----|------|---------|
+| 2.13.1 | 2026-05-25 | **오픈 이슈 5건 트리아지** - `/retry_<승인ID> <금액>` MessageHandler 구현 (HitL approve 보완), 당일 매도 후 재매수 차단 (#282, `was_sold_today` KR+US), `/ask` 도구 호출 날짜 가드 (#283), 보고서 `2.1 기업현황` firecrawl 누락 관찰 가능화 (#286, 4-rule 복원력 + `<!-- firecrawl_status: -->` 마커 + `read_timeout_seconds: 120`), AI bullish + 포트폴리오 가드 차단 시 명시적 콜아웃 (#281, KR+US), 매매일지 피드백루프 1단계 투명화 (#280 부분, `get_provenance_for_ticker` + 매수 메시지 `📚 매매일지 참조` 1-line). 54 신규 테스트 |
+| 2.13.0 | 2026-05-25 | **Human-in-the-Loop 매매 승인 + Mock KIS 테스트 스택** - Phase 2: `approval/` 패키지 + Telegram 승인 카드 (✅/❌/📝), 30분 timeout, `account_name` 기반 다계좌 자동 라우팅, `trade_approvals` SQLite 감사 추적, Phase 1: `tests/mock_kis_server.py` FastAPI 인메모리 KIS + `KIS_ENV=mock` 라우팅, KIS Open API 스펙 워크북 contract test (339 시트), GitHub Actions CI 워크플로우 (approval-layer + mock-kis-server + ci-summary). 기본값 OFF (`ENABLE_TRADE_APPROVAL=false`) |
+| 2.12.0 | 2026-04-30 | **시장 국면별 유연 대응 (Regime-Aware Trading)** - parabolic regime 신설 (시장지수 90일 +30% AND 30일 +10% 충족 시), 모멘텀 트리거에만 적용, target_price stale 컨센서스 fallback (보고서 목표가 < 현재가×1.05 시 차트 저항선 80%로 fallback), Distribution Day Kill Switch (4주 내 분포일 4건 → regime 1단계 자동 보수화), parabolic 시 max_portfolio_size 1~2 슬롯 축소, regime 라벨 한국어 번역 통일 |
+| 2.11.0 | 2026-04 | **trading agent 모델 업그레이드 + Investment Strategist CAN SLIM 재구성** - KR/US 매매 에이전트 gpt-5.4 → gpt-5.5 (#269), Investment Strategist 프롬프트 CAN SLIM 중심 재구성 (#268), Firecrawl 명령어 LLM-emitted disclaimer 중복 제거 (#263), KR 강한 강세장 min_score 5→4 (#265), /us_evaluate 티커 자동 대문자 (#264) |
+| 2.10.0 | 2026-04-21 | **Persistent Insight Agent (PR #262)** - archive.db 5 신규 테이블 + mcp-agent function calling + FTS5→embedding 재랭킹 + 주간 요약 티어, Telegram `/insight` ConversationHandler 멀티턴 (30분 TTL), DPO-lite 👍/👎 inline-keyboard 피드백, semantic fact distillation cron, archive 자기개선 레이어 (Phase A+B) |
 | 2.9.0 | 2026-03-31 | **외부 기여 3종 + 매매 안정성 수정** - 다중 계좌 지원 (tkgo11, #228): 주·부계좌 병렬 팬아웃 + DB 마이그레이션, US 소셜 센티먼트 (alexander-schneider, #229): Adanos API 통합, US 모듈 네임스페이스 충돌 수정 (lifrary, #227): `importlib.util` 기반 임포트, KIS API 오류 3종 (APTR0057·APBK1234) + Telegram JSON sanitize + 손절 방어 강화 (#239), US 매도 ORD_DVSN 누락 수정 (#238), Telegram 타임아웃 지수 백오프 재시도 (#237), OpenAI 400 디버그 로깅 (#232) |
 | 2.7.0 | 2026-03-24 | **ChatGPT OAuth Proxy + README 전면 업데이트** - ChatGPT Plus/Pro 구독으로 API 키 없이 분석 실행 가능 (`cores/chatgpt_proxy/`), Codex 엔드포인트 모델 매핑·SSE 파싱·response_format 변환 (#224), README 5개 언어 전면 개편 (모바일 앱·홍보영상·매매실적·Macro Intelligence 반영), 대시보드 스크린샷 교체 |
 | 2.6.0 | 2026-03-12 | **거시경제 인텔리전스 + 하이브리드 종목선정 + 텔레그램 얼럿 강화** - Macro Intelligence 에이전트 도입 (시장 체제 판단, 주도/낙후 섹터 식별), 탑다운+바텀업 하이브리드 종목 선정 (#202), US score-decision override 버그 수정 (#203), US trigger results 파일 경로 통일 (#204), KR/US 텔레그램 시그널 얼럿에 시장국면·선정채널·점수/R·R/손절 정보 추가 + PDF 커버 날짜 regex 수정 (#205) |
