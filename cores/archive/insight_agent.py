@@ -26,7 +26,9 @@ from datetime import datetime, timezone, timedelta
 
 from mcp_agent.agents.agent import Agent
 from mcp_agent.workflows.llm.augmented_llm import RequestParams
-from mcp_agent.workflows.llm.augmented_llm_anthropic import AnthropicAugmentedLLM
+from mcp_agent.workflows.llm.augmented_llm_anthropic import AnthropicAugmentedLLM  # noqa: F401 — legacy alias
+
+from cores.llm.provider import LLMProvider, clean
 
 _KST = timezone(timedelta(hours=9))
 
@@ -317,7 +319,8 @@ class InsightAgent:
             )
             try:
                 async with agent:
-                    llm = await agent.attach_llm(AnthropicAugmentedLLM)
+                    llm_cls = LLMProvider.get_llm_class("insight")
+                    llm = await agent.attach_llm(llm_cls)
                     user_msg = (
                         f"## 사용자 질문\n{question}\n\n"
                         f"## 컨텍스트 (누적 인사이트 + 리포트)\n{context_str}\n\n"
@@ -325,10 +328,10 @@ class InsightAgent:
                     )
                     response_text = await llm.generate_str(
                         message=user_msg,
-                        request_params=RequestParams(
-                            model=self.model,
+                        request_params=clean(RequestParams(
+                            model=self.model or LLMProvider.get_model("insight"),
                             maxTokens=4000,
-                        ),
+                        ), role="insight"),
                     )
             except Exception as agent_err:
                 logger.error(

@@ -1,8 +1,8 @@
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from mcp_agent.agents.agent import Agent
 from mcp_agent.workflows.llm.augmented_llm import RequestParams
-from mcp_agent.workflows.llm.augmented_llm_openai import OpenAIAugmentedLLM
 
+from cores.llm.provider import LLMProvider, clean
 from cores.openai_error_logging import log_openai_error
 
 
@@ -38,7 +38,8 @@ async def generate_report(agent, section, company_name, company_code, reference_
     """
     language_name = LANGUAGE_NAMES.get(language, language.upper())
 
-    llm = await agent.attach_llm(OpenAIAugmentedLLM)
+    llm_cls = LLMProvider.get_llm_class("analysis")
+    llm = await agent.attach_llm(llm_cls)
 
     # Create language-specific message
     if language == "ko":
@@ -105,13 +106,13 @@ async def generate_report(agent, section, company_name, company_code, reference_
     try:
         report = await llm.generate_str(
             message=message,
-            request_params=RequestParams(
-                model="gpt-5.4-mini",
+            request_params=clean(RequestParams(
+                model=LLMProvider.get_model("analysis"),
                 reasoning_effort="none",
                 maxTokens=32000,
                 parallel_tool_calls=True,
                 use_history=True
-            )
+            ), role="analysis")
         )
     except Exception as e:
         log_openai_error(logger, e, f"report generation for {section}")
@@ -132,7 +133,8 @@ async def generate_market_report(agent, section, reference_date, logger, languag
     """
     language_name = LANGUAGE_NAMES.get(language, language.upper())
 
-    llm = await agent.attach_llm(OpenAIAugmentedLLM)
+    llm_cls = LLMProvider.get_llm_class("analysis")
+    llm = await agent.attach_llm(llm_cls)
 
     # Create language-specific message
     if language == "ko":
@@ -199,14 +201,14 @@ async def generate_market_report(agent, section, reference_date, logger, languag
     try:
         report = await llm.generate_str(
             message=message,
-            request_params=RequestParams(
-                model="gpt-5.4-mini",
+            request_params=clean(RequestParams(
+                model=LLMProvider.get_model("analysis"),
                 reasoning_effort="none",
                 maxTokens=32000,
                 max_iterations=3,
                 parallel_tool_calls=True,
                 use_history=True
-            )
+            ), role="analysis")
         )
     except Exception as e:
         log_openai_error(logger, e, f"market report generation for {section}")
@@ -230,7 +232,6 @@ async def generate_summary(section_reports, company_name, company_code, referenc
     try:
         from mcp_agent.agents.agent import Agent
         from mcp_agent.workflows.llm.augmented_llm import RequestParams
-        from mcp_agent.workflows.llm.augmented_llm_openai import OpenAIAugmentedLLM
 
         language_name = LANGUAGE_NAMES.get(language, language.upper())
 
@@ -310,17 +311,18 @@ Comprehensive Analysis Report:
             instruction=instruction
         )
 
-        llm = await summary_agent.attach_llm(OpenAIAugmentedLLM)
+        llm_cls = LLMProvider.get_llm_class("summary")
+        llm = await summary_agent.attach_llm(llm_cls)
         executive_summary = await llm.generate_str(
             message=message,
-            request_params=RequestParams(
-                model="gpt-5.4-mini",
+            request_params=clean(RequestParams(
+                model=LLMProvider.get_model("summary"),
                 reasoning_effort="none",
                 maxTokens=16000,
                 max_iterations=2,
                 parallel_tool_calls=True,
                 use_history=True
-            )
+            ), role="summary")
         )
         return executive_summary
     except Exception as e:
@@ -347,7 +349,6 @@ async def generate_investment_strategy(section_reports, combined_reports, compan
     """
     from mcp_agent.agents.agent import Agent
     from mcp_agent.workflows.llm.augmented_llm import RequestParams
-    from mcp_agent.workflows.llm.augmented_llm_openai import OpenAIAugmentedLLM
 
     language_name = LANGUAGE_NAMES.get(language, language.upper())
 
@@ -548,17 +549,18 @@ Please present a consistent and executable investment strategy that investors ca
             instruction=instruction
         )
 
-        llm = await investment_strategy_agent.attach_llm(OpenAIAugmentedLLM)
+        llm_cls = LLMProvider.get_llm_class("strategist")
+        llm = await investment_strategy_agent.attach_llm(llm_cls)
         investment_strategy = await llm.generate_str(
             message=message,
-            request_params=RequestParams(
-                model="gpt-5.4-mini",
+            request_params=clean(RequestParams(
+                model=LLMProvider.get_model("strategist"),
                 reasoning_effort="none",
                 maxTokens=32000,
                 max_iterations=3,
                 parallel_tool_calls=True,
                 use_history=True
-            )
+            ), role="strategist")
         )
         logger.info(f"Completed investment_strategy - {len(investment_strategy)} characters")
         return investment_strategy

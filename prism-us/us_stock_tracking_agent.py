@@ -74,8 +74,23 @@ _spec = _ilu.spec_from_file_location(
 assert _spec is not None and _spec.loader is not None
 _mod = _ilu.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)  # type: ignore[union-attr]
-OpenAIAugmentedLLM = _mod.OpenAIResponsesLLM
+OpenAIAugmentedLLM = _mod.OpenAIResponsesLLM  # legacy alias — preferred path: cores.llm.provider
 del _ilu, _spec, _mod
+
+# Multi-LLM-provider resolver (v2.14.0). Loaded via importlib because prism-us
+# runs as a separate module tree (see import gymnastics for openai_responses_llm
+# above) — the resolver lives in the main project's cores/llm/.
+import importlib.util as _ilu2
+_provider_spec = _ilu2.spec_from_file_location(
+    "llm_provider",
+    Path(__file__).resolve().parent.parent / "cores" / "llm" / "provider.py",
+)
+assert _provider_spec is not None and _provider_spec.loader is not None
+_provider_mod = _ilu2.module_from_spec(_provider_spec)
+_provider_spec.loader.exec_module(_provider_mod)  # type: ignore[union-attr]
+LLMProvider = _provider_mod.LLMProvider
+clean = _provider_mod.clean
+del _ilu2, _provider_spec, _provider_mod
 
 # Import US-specific modules
 # Use explicit path to avoid conflicts with main project
@@ -721,8 +736,9 @@ class USStockTrackingAgent:
                 - ⚠️ This adjustment is a reference based on past experience.
                 """
 
-            # LLM call to generate trading scenario
-            llm = await self.trading_agent.attach_llm(OpenAIAugmentedLLM)
+            # LLM call to generate trading scenario (trading role)
+            llm_cls = LLMProvider.get_llm_class("trading", prefer_responses_api=True)
+            llm = await self.trading_agent.attach_llm(llm_cls)
 
             # Build trigger info section
             trigger_info_section = ""
@@ -750,10 +766,10 @@ class USStockTrackingAgent:
 
             response = await llm.generate_str(
                 message=prompt_message,
-                request_params=RequestParams(
-                    model="gpt-5.5",
+                request_params=clean(RequestParams(
+                    model=LLMProvider.get_model("trading"),
                     maxTokens=30000
-                )
+                ), role="trading")
             )
 
             # JSON parsing (consolidated in cores/utils.py)
@@ -1356,8 +1372,9 @@ class USStockTrackingAgent:
             # Dynamic trailing stop threshold: min 1.5%, max 5%, scales with price appreciation
             trailing_stop_threshold_pct = max(1.5, min(5.0, (highest_price - buy_price) / buy_price * 100 * 0.3)) if buy_price > 0 else 3.0
 
-            # LLM call
-            llm = await self.sell_decision_agent.attach_llm(OpenAIAugmentedLLM)
+            # LLM call (trading role)
+            llm_cls = LLMProvider.get_llm_class("trading", prefer_responses_api=True)
+            llm = await self.sell_decision_agent.attach_llm(llm_cls)
 
             prompt_message = f"""
 Please make a sell/hold decision for the following US stock holding.
@@ -1390,7 +1407,9 @@ Use yahoo_finance and sqlite tools to check latest data, then decide whether to 
 
             response = await llm.generate_str(
                 message=prompt_message,
-                request_params=RequestParams(model="gpt-5.5", maxTokens=30000)
+                request_params=clean(RequestParams(
+                    model=LLMProvider.get_model("trading"), maxTokens=30000,
+                ), role="trading")
             )
 
             if not response or not response.strip():
