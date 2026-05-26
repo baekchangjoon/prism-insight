@@ -821,8 +821,15 @@ def validate_credentials(app_key: str, mode: str) -> Tuple[bool, str]:
     """
     Validate app key matches the trading mode to prevent credential mismatch errors.
 
-    - Real mode (prod): App key should start with 'PS' but NOT 'PSVT'
-    - Demo mode (vps): App key should start with 'PSVT'
+    - Real mode (prod): App key historically starts with 'PS' but NOT 'PSVT'
+    - Demo mode (vps): App key historically starts with 'PSVT'
+
+    KIS has not formally documented this prefix convention and has issued
+    paper-trading keys without the PSVT prefix in practice. When the
+    heuristic produces a false positive (key actually works against the
+    target domain), set `PRISM_KIS_BYPASS_PREFIX_CHECK=true` to downgrade
+    the rejection to a warning. Default is strict (preserves the original
+    safety net for users whose keys still follow the convention).
 
     Args:
         app_key: The KIS app key
@@ -840,20 +847,39 @@ def validate_credentials(app_key: str, mode: str) -> Tuple[bool, str]:
         return False, "App key is empty or too short"
 
     is_demo_key = app_key.startswith('PSVT')
+    bypass = os.environ.get("PRISM_KIS_BYPASS_PREFIX_CHECK", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
 
     if mode == 'prod' and is_demo_key:
-        return False, (
+        msg = (
             "CREDENTIAL MISMATCH! Using DEMO app key (PSVT*) in REAL mode.\n"
             "Check kis_devlp.yaml - 'my_app' should be your real trading key (PS*, not PSVT*).\n"
             "This is the most common cause of 'Error Code: 500' authentication failures."
         )
+        if bypass:
+            logging.warning(
+                "PRISM_KIS_BYPASS_PREFIX_CHECK=true: allowing demo-prefixed key "
+                "in real mode. Confirm the key actually has real-trading permissions."
+            )
+            return True, ""
+        return False, msg
 
     if mode == 'vps' and not is_demo_key and app_key.startswith('PS'):
-        return False, (
+        msg = (
             "CREDENTIAL MISMATCH! Using REAL app key (PS*) in DEMO mode.\n"
             "Check kis_devlp.yaml - 'paper_app' should be your demo key (PSVT*).\n"
-            "Using real credentials in demo mode may cause unexpected behavior."
+            "Using real credentials in demo mode may cause unexpected behavior.\n"
+            "If your paper key was issued without the PSVT prefix, set "
+            "PRISM_KIS_BYPASS_PREFIX_CHECK=true to bypass this check."
         )
+        if bypass:
+            logging.warning(
+                "PRISM_KIS_BYPASS_PREFIX_CHECK=true: allowing non-PSVT-prefixed key "
+                "in demo mode. Confirm the key was issued for paper trading."
+            )
+            return True, ""
+        return False, msg
 
     return True, ""
 
