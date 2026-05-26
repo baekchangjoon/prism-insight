@@ -276,12 +276,15 @@ print(f'Today: buys={today}, sells={sells}')
 | 증상 | 원인 / 해결 |
 |------|-----------|
 | KIS 토큰 발급 실패 | `kis_devlp.yaml`의 app_key/app_secret 검증, 모의투자 키는 vps 도메인이어야 함 |
+| `CREDENTIAL MISMATCH! Using REAL app key (PS*) in DEMO mode` | v2.14.1+: paper key가 `PSVT*` 접두사가 아니어도 KIS demo 도메인은 정상 수락하는 경우 있음. `PRISM_KIS_BYPASS_PREFIX_CHECK=true` 환경변수로 우회 가능 (실제 키가 KIS demo에 등록돼 있을 때만 사용) |
+| `EGW00201 초당 거래건수를 초과하였습니다` | KIS 시세 API의 per-second rate limit. v2.14.1+에서 `get_current_price()`가 자동으로 1회 backoff 후 재시도 |
 | `APBK1234` / `APTR0057` KIS 오류 | v2.9.0에서 fix됨 — git pull |
 | 매수 시 "이미 보유" 오류 | `stock_holdings`에 row 존재 — `WHERE ticker = ?` 수동 확인 |
 | 매도 시 "수량 부족" | KIS 모의계좌 동기화 지연 — 1-2분 후 재시도 (자동 재시도 있음) |
 | 같은 종목 반복 매수 | v2.13.1 fix — `was_sold_today` 가드 — git pull |
 | `📚 매매일지 참조` 안 보임 | `ENABLE_TRADING_JOURNAL=true` 확인 + journal DB row 존재 여부 |
 | 매수 메시지 영문 regime | v2.13.0 fix — git pull |
+| 1분당 1회 토큰 발급 제한 (EGW00133) | KIS 정책 — 토큰은 `trading/config/KIS<date>` 또는 `KIS_acct_<hash>.token`에 자동 캐싱되므로 정상 운영 시 발생 안 함. 캐시 파일 수동 삭제 후 재시도 시 발생 가능 |
 
 ## 13. 데이터 위치
 

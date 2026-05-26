@@ -185,7 +185,13 @@ class DomesticStockTrading:
 
     def get_current_price(self, stock_code: str) -> Optional[Dict[str, Any]]:
         """
-        Get current market price (also used for connectivity test)
+        Get current market price (also used for connectivity test).
+
+        Transparently retries on KIS per-second rate-limit errors (EGW00201,
+        "초당 거래건수를 초과하였습니다"). The KIS quote endpoint enforces a
+        per-second cap that fires when callers iterate through tickers in a
+        tight loop; one short backoff fixes the vast majority of cases
+        without slowing down isolated calls.
 
         Args:
             stock_code: Stock code (6 digits)
@@ -207,29 +213,49 @@ class DomesticStockTrading:
             "fid_input_iscd": stock_code
         }
 
-        try:
-            res = self._request(api_url, tr_id, params)
+        # KIS per-second rate-limit code. Retry once with a short backoff
+        # rather than returning None — the failure is transient and the
+        # caller (typically a multi-ticker loop) has no good way to recover
+        # from a None vs. proper data missing the change_rate.
+        _RATE_LIMIT_CODE = "EGW00201"
+        max_attempts = 2
 
-            if res.isOK():
-                data = res.getBody().output
+        for attempt in range(1, max_attempts + 1):
+            try:
+                res = self._request(api_url, tr_id, params)
 
-                result = {
-                    'stock_code': stock_code,
-                    'stock_name': data.get('rprs_mrkt_kor_name', ''),
-                    'current_price': int(data.get('stck_prpr', 0)),  # Current price
-                    'change_rate': float(data.get('prdy_ctrt', 0)),  # Change rate from previous day
-                    'volume': int(data.get('acml_vol', 0))  # Cumulative volume
-                }
+                if res.isOK():
+                    data = res.getBody().output
 
-                logger.info(f"[{stock_code}] Current price: {result['current_price']:,} KRW ({result['change_rate']:+.2f}%)")
-                return result
-            else:
-                logger.error(f"Failed to get current price: {res.getErrorCode()} - {res.getErrorMessage()}")
+                    result = {
+                        'stock_code': stock_code,
+                        'stock_name': data.get('rprs_mrkt_kor_name', ''),
+                        'current_price': int(data.get('stck_prpr', 0)),  # Current price
+                        'change_rate': float(data.get('prdy_ctrt', 0)),  # Change rate from previous day
+                        'volume': int(data.get('acml_vol', 0))  # Cumulative volume
+                    }
+
+                    logger.info(f"[{stock_code}] Current price: {result['current_price']:,} KRW ({result['change_rate']:+.2f}%)")
+                    return result
+
+                err_code = res.getErrorCode()
+                if err_code == _RATE_LIMIT_CODE and attempt < max_attempts:
+                    backoff = 0.6 * attempt
+                    logger.warning(
+                        f"[{stock_code}] Rate-limited ({err_code}), retrying in {backoff:.1f}s "
+                        f"(attempt {attempt}/{max_attempts})"
+                    )
+                    time.sleep(backoff)
+                    continue
+
+                logger.error(f"Failed to get current price: {err_code} - {res.getErrorMessage()}")
                 return None
 
-        except Exception as e:
-            logger.error(f"Error getting current price: {str(e)}")
-            return None
+            except Exception as e:
+                logger.error(f"Error getting current price: {str(e)}")
+                return None
+
+        return None
 
     def calculate_buy_quantity(self, stock_code: str, buy_amount: int = None) -> int:
         """
